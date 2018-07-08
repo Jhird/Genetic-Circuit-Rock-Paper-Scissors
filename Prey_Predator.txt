@@ -1,0 +1,197 @@
+include gro
+
+chemostat ( true );
+set ( "dt", 0.02 );  // Default time step value
+
+feed_predator := signal ( 1, 1 ); // Signal to "feed" close predators ( diff, degrad )
+kill_prey := signal ( 1, 2); // Signal to "kill" close prey only ( diff, degrad ) 
+destroy := signal (3,1);
+
+k_prod_r := 69.4 / 2.35;            // Rate of mRNA production [mRNA/min/fL]
+k_deg_r  := - log ( 0.5 ) / 3.69;   // Rate of mRNA degradation [1/min]
+k_prod_p := 3.0;            // Rate of protein production [protein/mRNA/min/fL]
+k_deg_p  := 0.01;   // Rate of protein degradation [1/min]
+
+prey_number := 90;
+predator_number := 10;
+
+r := [ t := 0 , count := 0];
+
+program prey() := {
+	
+	gfp := 1;
+	true : { gfp := volume * 100 }  // Prey is green
+	set ("ecoli_growth_rate", 0.05);
+	
+	
+	mRNA_LasI := 0;  // Initialize molecules
+	mRNA_RhlR := 0;
+	mRNA_lysE := 0;
+	x := 0;
+	
+	LasI := 0;
+	RhlR := 0;
+	lysE := 0;
+	
+	rate ( k_prod_r * volume ) : { mRNA_LasI := mRNA_LasI + 1}; 
+	rate ( k_deg_r * mRNA_LasI ) : { mRNA_LasI := mRNA_LasI - 1};
+	
+	rate ( k_prod_p * mRNA_LasI ) : { LasI := LasI + 1};
+	rate ( k_deg_p * LasI ) : { LasI := LasI - 1};
+	
+	rate ( k_prod_r * volume ) : { mRNA_RhlR := mRNA_RhlR + 1};
+	rate ( k_deg_r * mRNA_RhlR ) : { mRNA_RhlR := mRNA_RhlR - 1};
+	
+	rate ( k_prod_p * mRNA_RhlR ) : { RhlR := RhlR + 1};
+	rate ( k_deg_p * RhlR ) : { RhlR := RhlR - 1};
+	
+	rate(0.1) : { emit_signal ( feed_predator, 100 ) } 
+	
+	get_signal ( kill_prey ) > 0.1 : {
+		x := 1
+	}
+	
+	get_signal ( kill_prey ) <= 0.1 : {
+		x := 0
+	}
+	
+	get_signal ( destroy ) > 0.1 :{
+		die(),
+		prey_number := prey_number - 1
+	}
+	rate ( k_prod_r * RhlR ) : { mRNA_lysE := mRNA_lysE + 3*x};
+	rate ( k_deg_r * mRNA_lysE ) : { mRNA_lysE := mRNA_lysE - 1};
+	
+	rate ( k_prod_p * mRNA_lysE ) : { lysE := lysE + 1};
+	rate ( k_deg_p * lysE ) : { lysE := lysE - 1};
+	
+	lysE > 210 : { 
+		prey_number := prey_number - 1,
+		die()
+	}   // Prey dies if lysE concentration is too high
+	
+	selected & just_divided : {
+		print ( "At time ", r.t, ": After division, prey cell ", id, " has ", lysE, " lysE molecules")
+	}	
+	
+	daughter : {prey_number := prey_number + 1}
+	
+	
+
+	
+};
+
+program predator() := {
+
+	rfp := 1;
+	true : { rfp := volume * 100 }  // Predator is red
+	set ("ecoli_growth_rate", 0.07);
+	
+	mRNA_RhlI := 0; //Initialize molecules
+	mRNA_LasR := 0; 
+	mRNA_TetR := 0;
+	mRNA_lysEp := 0;
+	y := 0;
+	
+	RhlIp := 0;
+	LasR := 0;
+	TetR := 0;
+	lysEp := 0;
+	
+	rate ( k_prod_r * volume ) : { mRNA_RhlI := mRNA_RhlI + 1}; 
+	rate ( k_deg_r * mRNA_RhlI ) : { mRNA_RhlI := mRNA_RhlI - 1};
+	
+	rate ( k_prod_p * mRNA_RhlI ) : { RhlIp := RhlIp + 1};
+	rate ( k_deg_p * RhlIp ) : { RhlIp := RhlIp - 1};
+	
+	rate ( k_prod_r * volume ) : { mRNA_LasR := mRNA_LasR + 1}; 
+	rate ( k_deg_r * mRNA_LasR ) : { mRNA_LasR := mRNA_LasR - 1};
+	
+	rate ( k_prod_p * mRNA_LasR ) : { LasR := LasR + 1};
+	rate ( k_deg_p * LasR ) : { LasR := LasR - 1};
+	
+	rate(0.1) : { emit_signal ( kill_prey, 100 ) }
+	
+	get_signal ( feed_predator ) > 0.1 : {
+		lysEp := lysEp*0.5
+	}
+	
+	get_signal ( destroy ) > 0.1 :{
+		die(),
+		predator_number := predator_number - 1
+	}
+	
+	rate ( k_prod_r * mRNA_TetR ) : { mRNA_TetR := mRNA_TetR + 1}
+	rate ( k_deg_r * mRNA_TetR ) : { mRNA_TetR := mRNA_TetR - 1};
+	
+	rate ( k_prod_p * mRNA_TetR ) : { TetR := TetR + 1};
+	rate ( k_deg_p * TetR ) : { TetR := TetR - 1};
+	
+	rate ( k_prod_r * volume ) : { mRNA_lysEp := mRNA_lysEp + 1};
+	
+	rate ( k_deg_r * mRNA_lysEp ) : { mRNA_lysEp := mRNA_lysEp - 1};
+	
+	rate ( k_prod_p * mRNA_lysEp ) : { lysEp := lysEp + 1};
+	rate ( k_deg_p * lysEp ) : { lysEp := lysEp - 1};
+	rate ( k_prod_r * TetR ) : { lysEp := lysEp - 1}; // Repression rate
+	
+	lysEp > 270 : { 
+		predator_number := predator_number - 1,
+		die()
+		
+	}   // Predator dies if lysEp concentration is too high (starvation)
+	
+	selected & just_divided : {
+		print ( "At time ", r.t, ": After division, predator cell ", id, " has ", lysEp, " lysE molecules")
+	}	
+	
+	daughter : {predator_number := predator_number + 1}
+	
+};
+
+program main() := {
+
+	true : {
+		r.t := r.t + dt,
+		r.count := r.count + dt,
+		set_signal( destroy, 150, 120, 100),
+		set_signal( destroy, 150, 200, 100)		
+	}
+	
+	r.count >= 1 : {
+		print (r.t, ", ", predator_number, ", predator cells ,", prey_number, ", prey cells"),
+		r.count := 0
+	}
+	
+};
+
+
+foreach q in range prey_number do 
+
+  ecoli ( [ 
+      x := rand(100)-50, 
+      y := rand(100)-50, 
+      theta := 0.01*rand(314) ], 
+    program prey() )
+
+end;
+
+foreach q in range (predator_number/2) do 
+
+  ecoli ( [ 
+      x := rand(100)-50, 
+      y := -30, 
+      theta := 0.01*rand(314) ], 
+    program predator() )
+
+end;
+
+foreach q in range (predator_number/2) do 
+
+  ecoli ( [ 
+      x := rand(100)-50, 
+      y := 30, 
+      theta := 0.01*rand(314) ], 
+    program predator() )
+
+end;

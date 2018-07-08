@@ -1,0 +1,189 @@
+include gro
+
+chemostat ( true );
+set ( "chemostat_width", 250);
+set ( "chemostat_height", 250);
+set ( "dt", 0.01 );  // Default time step value
+
+kill_rock := signal ( 1, 2 ); // Signal to "kill" nearby ROCK ( diff, degrad )
+kill_paper := signal ( 1, 2 ); // Signal to "kill" nearby PAPER ( diff, degrad ) 
+kill_scissors := signal ( 1, 2 ); // Signal to "kill" nearby SCISSORS ( diff, degrad )
+destroy := signal ( 2, 1 );
+
+k_prod_r := 69.4 / 2.35;            // Rate of mRNA production [mRNA/min/fL]
+k_deg_r  := - log ( 0.5 ) / 3.69;   // Rate of mRNA degradation [1/min]
+k_prod_p := 3.0;            // Rate of protein production [protein/mRNA/min/fL]
+k_deg_p  := 0.01;   // Rate of protein degradation [1/min]
+
+rock_number := 50;
+paper_number := 50;
+scissors_number := 70;
+
+r := [ t := 0 , count := 0];
+
+program paper() := {
+	
+	gfp := 1;
+	true : { gfp := volume * 100 }  // Paper is green
+	set ("ecoli_growth_rate", 0.08);
+	
+	x := 0;
+	mRNA_lysE := 0;
+	lysE := 0;
+	
+	get_signal ( kill_paper ) > 0.1 : {
+		x := 1
+	}
+	
+	get_signal ( kill_paper ) <= 0.1 : {
+		x := 0
+	}
+	
+	get_signal ( destroy ) > 0.1 :{
+		die(),
+		paper_number := paper_number - 1
+	}
+	
+	rate ( k_prod_r * volume ) : { mRNA_lysE := mRNA_lysE + 1*x}; 
+	rate ( k_deg_r * mRNA_lysE ) : { mRNA_lysE := mRNA_lysE - 1};
+	
+	rate ( k_prod_p * mRNA_lysE ) : { lysE := lysE + 1};
+	rate ( k_deg_p * lysE ) : { lysE := lysE - 1};
+	
+	rate (k_prod_r * volume * k_prod_p / (k_deg_r * k_deg_p)) : {emit_signal ( kill_rock, 1 )}
+	
+	lysE > 210 : { 
+		paper_number := paper_number - 1,
+		die()
+	}   // Paper dies if lysE concentration is too high	
+	
+	daughter : {paper_number := paper_number + 1}
+		
+};
+
+program rock() := {
+	
+	rfp := 1;
+	true : { rfp := volume * 100 }  // Rock is red
+	set ("ecoli_growth_rate", 0.08);
+	
+	x := 0;
+	mRNA_lysE := 0;
+	lysE := 0;
+	
+	get_signal ( kill_rock ) > 0.1 : {
+		x := 1
+	}
+	
+	get_signal ( kill_rock ) <= 0.1 : {
+		x := 0
+	}
+	
+	get_signal ( destroy ) > 0.1 :{
+		die(),
+		rock_number := rock_number - 1
+	}
+	
+	rate ( k_prod_r * volume ) : { mRNA_lysE := mRNA_lysE + 1*x}; 
+	rate ( k_deg_r * mRNA_lysE ) : { mRNA_lysE := mRNA_lysE - 1};
+	
+	rate ( k_prod_p * mRNA_lysE ) : { lysE := lysE + 1};
+	rate ( k_deg_p * lysE ) : { lysE := lysE - 1};
+	
+	rate (k_prod_r * volume * k_prod_p / (k_deg_r * k_deg_p)) : {emit_signal ( kill_scissors, 1 )}
+	
+	lysE > 210 : { 
+		rock_number := rock_number - 1,
+		die()
+	}   // Rock dies if lysE concentration is too high	
+	
+	daughter : {rock_number := rock_number + 1}
+		
+};
+
+program scissors() := {
+	
+	cfp := 1;
+	true : { cfp := volume * 100 }  // Scissors is blue
+	set ("ecoli_growth_rate", 0.08);
+	
+	x := 0;
+	mRNA_lysE := 0;
+	lysE := 0;
+	
+	get_signal ( kill_scissors ) > 0.1 : {
+		x := 1
+	}
+	
+	get_signal ( kill_scissors ) <= 0.1 : {
+		x := 0
+	}
+	
+	get_signal ( destroy ) > 0.1 :{
+		die(),
+		scissors_number := scissors_number - 1
+	}
+	
+	rate ( k_prod_r * volume ) : { mRNA_lysE := mRNA_lysE + 1*x}; 
+	rate ( k_deg_r * mRNA_lysE ) : { mRNA_lysE := mRNA_lysE - 1};
+	
+	rate ( k_prod_p * mRNA_lysE ) : { lysE := lysE + 1};
+	rate ( k_deg_p * lysE ) : { lysE := lysE - 1};
+	
+	rate (k_prod_r * volume * k_prod_p / (k_deg_r * k_deg_p)) : {emit_signal ( kill_paper, 1 )}
+	
+	lysE > 210 : { 
+		scissors_number := scissors_number - 1,
+		die()
+	}   // Scissors dies if lysE concentration is too high	
+	
+	daughter : {scissors_number := scissors_number + 1}
+		
+};
+
+program main() := {
+
+	true : {
+		r.t := r.t + dt,
+		r.count := r.count + dt,
+		set_signal( destroy, 200, 120, 100),
+		set_signal( destroy, 200, 200, 100)		
+	}
+	
+	r.count >= 1 : {
+		print (r.t, ", ", rock_number, ", ", paper_number, ", ", scissors_number ),
+		r.count := 0
+	}
+
+};
+
+
+foreach q in range rock_number do 
+
+  ecoli ( [ 
+      x := rand(100)-50, 
+      y := rand(100)-50, 
+      theta := 0.01*rand(314) ], 
+    program rock() )
+
+end;
+
+foreach q in range paper_number do 
+
+  ecoli ( [ 
+      x := rand(100)-50, 
+      y := rand(100)-50, 
+      theta := 0.01*rand(314) ], 
+    program paper() )
+
+end;
+
+foreach q in range scissors_number do 
+
+  ecoli ( [ 
+      x := rand(100)-50, 
+      y := rand(100)-50, 
+      theta := 0.01*rand(314) ], 
+    program scissors() )
+
+end;
